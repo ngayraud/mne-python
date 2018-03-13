@@ -6,119 +6,157 @@ Created on Mon Mar 12 15:53:38 2018
 @author: ngayraud
 """
 
-import mne
+import warnings
 import numpy as np
-from simulation import Simulation
-
-import warnings 
-
-from numpy.testing import (assert_array_almost_equal, assert_array_equal,
-                           assert_equal)
-
+from numpy.testing import assert_equal
 from nose.tools import assert_true, assert_raises
 
-#%%
-#Parameters
-def test_with_single_function(fwd_f,labels, subject, subjects_dir):
-    
-    freq = 256.0
-    time = 2.0
-    function='sin'
-    
-    #Simulation
-    times = np.arange(0, time, 1.0/freq)
-    sim_1 = Simulation(fwd_f, n_dipoles=2, labels=labels, location = 'center',
-                       subject=subject, subjects_dir=subjects_dir, 
-                       function=function)
-    raw_1 = sim_1.simulate_raw_signal(times, cov=0, verbose=0)
-    data_1,_ = raw_1[:]
-    sim_2 = Simulation(fwd_f, n_dipoles=2, labels=labels, location = 'center',
-                       subject=subject, subjects_dir=subjects_dir, 
-                       function=function)
-    raw_2 = sim_2.simulate_raw_signal(times, cov=0, verbose=0)
-    data_2,_ = raw_2[:]
-    
+from mne.simulation import Simulation, simulate_raw_signal
+from mne import (datasets, setup_source_space, make_bem_model,
+                 make_bem_solution, make_forward_solution,
+                 convert_forward_solution, read_label)
+
+from mne.utils import run_tests_if_main
+from mne.datasets import testing
+
+def _same(times, fwd_f, n_dipoles, labels, location, subject, subjects_dir,
+          function, events):
+    sim_1 = Simulation(fwd_f, n_dipoles=n_dipoles, labels=labels,
+                       location=location, subject=subject,
+                       subjects_dir=subjects_dir, function=function)
+    raw_1 = simulate_raw_signal(sim_1, times, cov=0, events=events, verbose=0)
+    data_1, _ = raw_1[:]
+    sim_2 = Simulation(fwd_f, n_dipoles=n_dipoles, labels=labels,
+                       location=location, subject=subject,
+                       subjects_dir=subjects_dir, function=function)
+    raw_2 = simulate_raw_signal(sim_2, times, cov=0, events=events, verbose=0)
+    data_2, _ = raw_2[:]
+
     #This should work
     assert_equal(data_1, data_2)
     assert_true(~np.isnan(np.sum(data_1)) or ~np.isinf(np.sum(data_1)))
     assert_true(~np.isnan(np.sum(data_2)) or ~np.isinf(np.sum(data_1)))
-    
+
+
+def _without_events(fwd_f, labels, subject, subjects_dir):
+
+    freq = 256.0
+    time = 2.0
+    times = np.arange(0, time, 1.0/freq)
+
+
+    #Should work
+    _same(times, fwd_f, n_dipoles=2, labels=labels, location='center',
+          subject=subject, subjects_dir=subjects_dir, function='sin',
+          events=None)
+    _same(times, fwd_f, n_dipoles=2, labels=labels, location='center',
+          subject=subject, subjects_dir=subjects_dir,
+          function=['p300_target', 'sin'], events=None)
+
     #These should raise warnings
     warnings.simplefilter("error")
-    
-    assert_raises(RuntimeWarning,Simulation,fwd_f,
-                  n_dipoles=3,labels=labels,function=function)
-    assert_raises(RuntimeWarning,Simulation,fwd_f,
-              n_dipoles=2,labels=labels[:1],function=function)
-    assert_raises(RuntimeWarning,Simulation,fwd_f,
-              n_dipoles=2,labels=labels,function='hi')
-    
+    #different labels and dipoles
+    assert_raises(RuntimeWarning, Simulation, fwd_f, n_dipoles=1,
+                  labels=labels, function='sin')
+    assert_raises(RuntimeWarning, Simulation, fwd_f, n_dipoles=3,
+                  labels=labels, function='sin')
+    #different functions and dipoles
+    assert_raises(RuntimeWarning, Simulation, fwd_f, n_dipoles=2,
+                  labels=labels, function=['sin', 'p300_target', 'sin'])
+    assert_raises(RuntimeWarning, Simulation, fwd_f, n_dipoles=2,
+                  labels=labels, function=['sin'])
+    #different window times and functions
+    assert_raises(RuntimeWarning, Simulation, fwd_f, n_dipoles=2,
+                  labels=labels, subjects_dir=subjects_dir,
+                  function=['sin', 'p300_target'],
+                  window_times=['all', 'all', 'all'])
+    assert_raises(RuntimeWarning, Simulation, fwd_f, n_dipoles=2,
+                  labels=labels, subjects_dir=subjects_dir,
+                  function=['sin', 'p300_target'], window_times=['all'])
     warnings.simplefilter("always")
- #%%   
-def test_with_multiple_functions(fwd_f,labels, subject, subjects_dir):
+
+
+def _with_events(fwd_f, labels, subject, subjects_dir):
 
     freq = 256.0
-    function=['p300_target','sin']
+    function = ['p300_target', 'sin']
     time = 2.0
-    
-    #Simulation
-    times = np.arange(0,time,1.0/freq)
-    sim_1 = Simulation(fwd_f,n_dipoles=2, labels=labels, location = 'center',
-                       subject=subject, subjects_dir=subjects_dir,
-                       function=function)
-    raw_1 = sim_1.simulate_raw_signal(times, cov=0, verbose=0)
-    data_1,_ = raw_1[:]
-    sim_2 = Simulation(fwd_f, n_dipoles=2, labels=labels, location = 'center',
-                       subject=subject, subjects_dir=subjects_dir, 
-                       function=function)
-    raw_2 = sim_2.simulate_raw_signal(times, cov=0, verbose=0)
-    data_2,_ = raw_2[:]
-    
-    #This should work
-    assert_equal(data_1, data_2)
-    assert_true(~np.isnan(np.sum(data_1)) or ~np.isinf(np.sum(data_1)))
-    assert_true(~np.isnan(np.sum(data_2)) or ~np.isinf(np.sum(data_1)))
-    
-    #These should raise warnings    
+    times = np.arange(0, time, 1.0/freq)
+    window_times = np.arange(0, time/3.0, 1.0/freq)
+    indices = np.array([0, np.floor(len(times)/4)])
+    events = np.zeros((len(indices), 3))
+    events[:, 0] = indices
+    events[:, 2] = 1
+
+    #These should work
+    _same(times, fwd_f, n_dipoles=2, labels=labels, location='center',
+          subject=subject, subjects_dir=subjects_dir,
+          function=function, events=[events, events])
+    _same(times, fwd_f, n_dipoles=2, labels=labels, location='center',
+          subject=subject, subjects_dir=subjects_dir,
+          function=function, events=events)
+
+    #These should raise warnings
     warnings.simplefilter("error")
 
-    assert_raises(RuntimeWarning,Simulation,fwd_f,
-                  n_dipoles=2,labels=labels,
-                  function=['sin']+function)
-    
+    #wrong number of events
+    sim = Simulation(fwd_f, n_dipoles=2, labels=labels, location='center',
+                     subject=subject, subjects_dir=subjects_dir,
+                     function=function)
+    assert_raises(RuntimeWarning, simulate_raw_signal, sim, times, cov=0,
+                  events=[events], verbose=0)
+    assert_raises(RuntimeWarning, simulate_raw_signal, sim, times, cov=0,
+                  events=[events, events, events], verbose=0)
+    #Too large window
+    window_times = np.arange(0, time+1.0, 1.0/freq)
+    sim = Simulation(fwd_f, n_dipoles=2, labels=labels, location='center',
+                     subject=subject, subjects_dir=subjects_dir,
+                     function=function, window_times=['all', window_times])
+    assert_raises(RuntimeWarning, simulate_raw_signal, sim, times, cov=0,
+                  events=events, verbose=0)
+    #add an index that is too large
+    events[0, 0] = len(times)
+    sim = Simulation(fwd_f, n_dipoles=2, labels=labels, location='center',
+                     subject=subject, subjects_dir=subjects_dir,
+                     function=function)
+    assert_raises(RuntimeWarning, simulate_raw_signal, sim, times, cov=0,
+                  events=events, verbose=0)
+
     warnings.simplefilter("always")
 
-#%%    
 #Initialize
-data_path = mne.datasets.sample.data_path()
+data_path = data_path = datasets.sample.data_path()
 raw_fname = data_path + '/MEG/sample/sample_audvis_raw.fif'
 subjects_dir = data_path + '/subjects'
 trans = data_path + '/MEG/sample/sample_audvis_raw-trans.fif'
 
 subject = 'sample'
-#%%
-#Compute forward model
-src = mne.setup_source_space(subject, spacing='oct6',
+
+@testing.requires_testing_data
+def test_simulate_raw():
+    """Test simulation of raw data."""
+    #Compute forward model
+    src = setup_source_space(subject, spacing='oct6',
                              subjects_dir=subjects_dir, add_dist=False)
-conductivity = (0.3, 0.006, 0.3)
-model = mne.make_bem_model(subject, ico=4,
+    conductivity = (0.3, 0.006, 0.3)
+    model = make_bem_model(subject, ico=4,
                            conductivity=conductivity,
                            subjects_dir=subjects_dir)
 
-bem = mne.make_bem_solution(model)
-fwd = mne.make_forward_solution(raw_fname, trans=trans, src=src, bem=bem,
+    bem = make_bem_solution(model)
+    fwd = make_forward_solution(raw_fname, trans=trans, src=src, bem=bem,
                                 meg=True, eeg=True, mindist=5.0, n_jobs=2)
 
-fwd_f = mne.convert_forward_solution(fwd, surf_ori=True, force_fixed=True,
-                                    use_cps=True)
+    fwd_f = convert_forward_solution(fwd, surf_ori=True, force_fixed=True,
+                                     use_cps=True)
 
-#%%
-label_names = ['Vis-lh', 'Vis-rh']
-labels = [mne.read_label(data_path + '/MEG/sample/labels/%s.label' % ln)
-          for ln in label_names]
-for label in labels:
-    label.values[:] = 1
-    
-test_with_single_function(fwd_f,labels, subject, subjects_dir)
-test_with_multiple_functions(fwd_f,labels, subject, subjects_dir)
-#%%
+    label_names = ['Vis-lh', 'Vis-rh']
+    labels = [read_label(data_path + '/MEG/sample/labels/%s.label' % ln)
+              for ln in label_names]
+    for label in labels:
+        label.values[:] = 1
+
+    _without_events(fwd_f, labels, subject, subjects_dir)
+    _with_events(fwd_f, labels, subject, subjects_dir)
+
+run_tests_if_main()

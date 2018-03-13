@@ -5,9 +5,9 @@ Created on Wed Feb 21 11:13:50 2018
 @author: ngayraud
 """
 import numpy as np
-from mne.utils import warn
+from ..utils import warn
 
-def _get_function(function):
+def get_function(function):
     """ Check function exist and return the callable. Returns sinusoide if
         not found.
     """
