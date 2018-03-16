@@ -24,12 +24,12 @@ def _same(times, fwd_f, n_dipoles, labels, location, subject, subjects_dir,
     sim_1 = Simulation(fwd_f, n_dipoles=n_dipoles, labels=labels,
                        location=location, subject=subject,
                        subjects_dir=subjects_dir, function=function)
-    raw_1 = simulate_raw_signal(sim_1, times, cov=0, events=events, verbose=0)
+    raw_1 = simulate_raw_signal(sim_1, times, cov=None, events=events, verbose=0)
     data_1, _ = raw_1[:]
     sim_2 = Simulation(fwd_f, n_dipoles=n_dipoles, labels=labels,
                        location=location, subject=subject,
                        subjects_dir=subjects_dir, function=function)
-    raw_2 = simulate_raw_signal(sim_2, times, cov=0, events=events, verbose=0)
+    raw_2 = simulate_raw_signal(sim_2, times, cov=None, events=events, verbose=0)
     data_2, _ = raw_2[:]
 
     #This should work
@@ -158,5 +158,5 @@ def test_simulate_raw():
 
     _without_events(fwd_f, labels, subject, subjects_dir)
     _with_events(fwd_f, labels, subject, subjects_dir)
-
+    #TODO: add test for noise
 run_tests_if_main()

@@ -26,6 +26,7 @@ from ..utils import warn, logger
 from ..io import RawArray
 
 from .functions import get_function
+from .noise import generate_noise_data
 #Use the class simulation to specify the kind of simulation necessary
 
 class Simulation(dict):
@@ -216,7 +217,7 @@ class Simulation(dict):
         return [get_event(event) for event in events]
 
 
-def simulate_raw_signal(sim, times, cov, events=None, verbose=None):
+def simulate_raw_signal(sim, times, cov=None, events=None, verbose=None):
     """ Simulate a raw signal
 
     Parameters
@@ -225,7 +226,7 @@ def simulate_raw_signal(sim, times, cov, events=None, verbose=None):
         Initialized Simulation object with parameters
     times : array
         Time array
-    cov : Covariance
+    cov : Covariance | string | dict | None
         Covariance of the noise
     events : array, shape = (n_events, 3) | list of arrays | None
         events corresponding to some stimulation.
@@ -274,10 +275,15 @@ def simulate_raw_signal(sim, times, cov, events=None, verbose=None):
         raw_data += apply_forward_raw(sim.fwd, source_data, info,
                                       verbose=verbose).get_data()
 
-        #TODO: add noise using cov
-
+    
+    
+    if cov is not None:
+        raw_data += generate_noise_data(info, cov)
+        
+    
     raw = RawArray(raw_data, info, verbose=verbose)
-    #TODO: maybe add "main" event
+
+    #TODO: maybe add "main" event to stim channel
 
     logger.info('Done')
     return raw
