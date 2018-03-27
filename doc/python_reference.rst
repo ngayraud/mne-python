@@ -546,6 +546,7 @@ Covariance computation
    make_ad_hoc_cov
    read_cov
    write_cov
+   make_custom_cov
 
 
 MRI Processing
@@ -970,11 +971,18 @@ Simulation
    :toctree: generated/
    :template: function.rst
 
+   Simulation 
    simulate_evoked
    simulate_raw
    simulate_stc
    simulate_sparse_stc
    select_source_in_label
+   simulate_raw_signal
+   get_events
+   function_p300_nontarget
+   function_p300_target
+   function_sin
+   get_function
 
 
 .. _api_decoding:

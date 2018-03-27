@@ -306,9 +306,10 @@ def make_ad_hoc_cov(info, verbose=None):
     ch_names = [info['ch_names'][pick] for pick in picks]
     return Covariance(data, ch_names, info['bads'], info['projs'], nfree=0)
 
+
 ##############################################################################
 # Create from array
-#TODO: add test for this
+# TODO: add test for this
 @verbose
 def make_custom_cov(info, standard_deviations, verbose=None):
     """Create an ad hoc noise covariance.
@@ -317,9 +318,8 @@ def make_custom_cov(info, standard_deviations, verbose=None):
     ----------
     info : instance of Info
         Measurement info.
-    standard_deviations : dict of string : (numpy) array
-        stds of the diagonal elements
-        keys must be eeg, grad and mag  
+    standard_deviations : dict of string=array
+        Standard deviations for each channel. Keys must be eeg, grad and mag.
     verbose : bool, str, int, or None (default None)
         If not None, override default verbose level (see :func:`mne.verbose`
         and :ref:`Logging documentation <tut_logging>` for more).
@@ -327,7 +327,7 @@ def make_custom_cov(info, standard_deviations, verbose=None):
     Returns
     -------
     cov : instance of Covariance
-        The ad hoc diagonal noise covariance for the M/EEG data channels.
+        The diagonal noise covariance for the M/EEG data channels.
 
     Notes
     -----
@@ -337,23 +337,24 @@ def make_custom_cov(info, standard_deviations, verbose=None):
     picks = pick_types(info, meg=True, eeg=True, exclude=())
 
     # Standard deviations to be used
-    #TODO: implement easy creation of data
+    # TODO: implement easy creation of data, this is not easy
     grad_std = standard_deviations['grad']
     mag_std = standard_deviations['mag']
     eeg_std = standard_deviations['eeg']
-    #TODO a lot to do here, like check values
-    
+    # TODO a lot to do here, like check values
+
     data = np.zeros(len(picks))
     for meg, eeg, val in zip(('grad', 'mag', False), (False, False, True),
                              (grad_std, mag_std, eeg_std)):
         these_picks = pick_types(info, meg=meg, eeg=eeg)
-        data[np.searchsorted(picks, these_picks)] = np.multiply(val,val)
+        data[np.searchsorted(picks, these_picks)] = np.multiply(val, val)
 
     ch_names = [info['ch_names'][pick] for pick in picks]
-    
+
     return Covariance(data, ch_names, info['bads'], info['projs'], nfree=0)
 
 ##############################################################################
+
 
 def _check_n_samples(n_samples, n_chan):
     """Check to see if there are enough samples for reliable cov calc."""

@@ -1,10 +1,7 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Mar 16 10:31:51 2018
+# author: ngayraud
+#
+# Created on Fri Mar 16 10:31:51 2018.
 
-@author: ngayraud
-"""
 import warnings
 import numpy as np
 
@@ -15,8 +12,9 @@ from ..utils import check_random_state
 
 from mne.cov import Covariance
 
-def _check_cov(info,cov):
-    """Check that the user provided a valid covariance matrix for the noise"""
+
+def _check_cov(info, cov):
+    """Check that the user provided a valid covariance matrix for the noise."""
     if isinstance(cov, string_types):
         if cov == 'simple':
             cov = make_ad_hoc_cov(info, verbose=False)
@@ -24,7 +22,7 @@ def _check_cov(info,cov):
             cov = read_cov(cov, verbose=False)
     elif isinstance(cov, Covariance):
         pass
-    elif isinstance(cov, np.ndarray):
+    elif isinstance(cov, dict):
         cov = make_custom_cov(info, cov, verbose=False)
     else:
         raise ValueError('Covariance Matrix type not recognized. Valid input'
@@ -32,25 +30,25 @@ def _check_cov(info,cov):
                          'string(covariance filename | \'simple\'')
     return cov
 
-def generate_noise_data(info, cov, n_samples, random_state, iir_filter=None, 
+
+def generate_noise_data(info, cov, n_samples, random_state, iir_filter=None,
                         zi=None):
     """Create spatially colored and temporally IIR-filtered noise.
+
     Parameters
     ----------
-    
     cov : instance of Covariance | str
-    The sensor covariance matrix used to generate noise.
-    If 'simple', a basic (diagonal) ad-hoc noise covariance will be used. 
-    If a string (filename), then the covariance will be loaded.
-    If dict, a covariance matrix will be generated from it.
-        
+        The sensor covariance matrix used to generate noise.
+        If 'simple', a basic (diagonal) ad-hoc noise covariance will be used.
+        If a string (filename), then the covariance will be loaded.
+        If dict, a covariance matrix will be generated from it.
     """
     from scipy.signal import lfilter
-     
+
     # All checks here
     cov = _check_cov(info, cov)
     rng = check_random_state(random_state)
-            
+
     noise_cov = pick_channels_cov(cov, include=info['ch_names'], exclude=[])
 
     if set(info['ch_names']) != set(noise_cov.ch_names):
@@ -58,18 +56,20 @@ def generate_noise_data(info, cov, n_samples, random_state, iir_filter=None,
                          'identical. Cannot generate the noise matrix. '
                          'Channels missing in covariance %s.' %
                          np.setdiff1d(info['ch_names'], noise_cov.ch_names))
-    
-    noise_cov['data'] = np.diag(noise_cov.data) if noise_cov['diag'] else noise_cov.data
 
-    # Parameters        
-    n_channels = len(noise_cov.data)    
+    noise_cov['data'] = (np.diag(noise_cov.data) if noise_cov['diag'] else
+                         noise_cov.data)
+
+    # Parameters
+    n_channels = len(noise_cov.data)
     mu_channels = np.zeros(n_channels)
 
     # Generate the noise
     # we almost always get a positive semidefinite warning here, so squash it
     with warnings.catch_warnings(record=True):
-        noise = rng.multivariate_normal(mu_channels, noise_cov.data, n_samples).T
-        
+        noise = rng.multivariate_normal(mu_channels, noise_cov.data,
+                                        n_samples).T
+
     # Apply the filter if any
     if iir_filter is not None:
         if zi is None:
