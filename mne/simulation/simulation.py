@@ -10,7 +10,7 @@ from ..utils import warn, logger
 from ..io import RawArray
 from ..io.constants import FIFF
 
-from .functions import get_function
+from .waveforms import get_waveform
 from .noise import generate_noise_data
 
 
@@ -35,12 +35,12 @@ class Simulation(dict):
     subjects_dir : str, or None
         Path to the SUBJECTS_DIR. If None, the path is obtained by using the
         environment variable SUBJECTS_DIR. Only used with location=``center``.
-    function: list of callables/str of length n_dipoles | str | callable
-        To simulate a function (activity) on each dipole. If it is a string or
+    waveform: list of callables/str of length n_dipoles | str | callable
+        To simulate a waveform (activity) on each dipole. If it is a string or
         a callable, the same activity will be generated over all dipoles
     window_times : array | list | str
-        time window(s) to generate activity. If list, its size should be 
-        len(function). If str, should be ``all`` (default)
+        time window(s) to generate activity. If list, its size should be
+        len(waveform). If str, should be ``all`` (default)
 
     Notes
     -----
@@ -48,7 +48,7 @@ class Simulation(dict):
     """
 
     def __init__(self, fwd, n_dipoles=2, labels=None, location='random',
-                 subject=None, subjects_dir=None, function='sin',
+                 subject=None, subjects_dir=None, waveform='sin',
                  window_times='all'):
         self.fwd = fwd  # TODO: check fwd
         if labels is not None:
@@ -57,13 +57,13 @@ class Simulation(dict):
                     subjects_dir=subjects_dir, location=location,
                     info=self.fwd['info'])
 
-        self.functions = self._check_function(function)
+        self.waveforms = self._check_waveform(waveform)
         self.window_times = self._check_window_times(window_times)
         self['info']['projs'] = []
         self['info']['bads'] = []
 
     def _check_labels(self, labels, n_dipoles):
-        """Check the function given as imput wrt the number of dipoles.
+        """Check the waveform given as imput wrt the number of dipoles.
 
         Return a list of labels and the number of dipoles.
         """
@@ -75,34 +75,34 @@ class Simulation(dict):
         labels = labels[:n_labels]
         return labels, n_labels
 
-    def _check_function(self, function):
-        """Check the function given as imput wrt the number of dipoles.
+    def _check_waveform(self, waveform):
+        """Check the waveform given as imput wrt the number of dipoles.
 
         Return a list of callables.
         """
-        if isinstance(function, str):
-            return [get_function(function)]
+        if isinstance(waveform, str):
+            return [get_waveform(waveform)]
 
-        elif isinstance(function, list):
+        elif isinstance(waveform, list):
 
-            if len(function) > self['n_dipoles']:
-                warn('The number of functions is greater from the number of '
-                     'dipoles. %s function(s) will be generated.'
+            if len(waveform) > self['n_dipoles']:
+                warn('The number of waveforms is greater from the number of '
+                     'dipoles. %s waveform(s) will be generated.'
                      % self['n_dipoles'])
-                function = function[:self['n_dipoles']]
+                waveform = waveform[:self['n_dipoles']]
 
-            elif len(function) < self['n_dipoles']:
-                pad = self['n_dipoles'] - len(function)
-                warn('The number of functions is smaller from the number of '
+            elif len(waveform) < self['n_dipoles']:
+                pad = self['n_dipoles'] - len(waveform)
+                warn('The number of waveforms is smaller from the number of '
                      'dipoles. %s sinusoid(s) will be added.'
                      % pad)
-                function = function + ['sin'] * pad
+                waveform = waveform + ['sin'] * pad
 
-            return [get_function(f) for f in function]
+            return [get_waveform(f) for f in waveform]
 
         else:
             warn('Urecognised type. Sinusoide will be generated.')
-            return [get_function('sin')]
+            return [get_waveform('sin')]
 
     def _check_window_times(self, window_times):
         """Check the window times given as input wrt the number of dipoles.
@@ -111,17 +111,17 @@ class Simulation(dict):
         """
         if isinstance(window_times, list):
 
-            if len(window_times) > len(self.functions):
-                n_func = len(self.functions)
+            if len(window_times) > len(self.waveforms):
+                n_func = len(self.waveforms)
                 warn('The number of window times is greater than the number '
-                     'of functions. %s function(s) will be generated.'
+                     'of waveforms. %s waveform(s) will be generated.'
                      % n_func)
                 window_times = window_times[:n_func]
 
-            elif len(window_times) < len(self.functions):
-                pad = len(self.functions) - len(window_times)
+            elif len(window_times) < len(self.waveforms):
+                pad = len(self.waveforms) - len(window_times)
                 warn('The number of window times is smaller than the number '
-                     'of functions. Assuming that the last ones are \'all\'')
+                     'of waveforms. Assuming that the last ones are \'all\'')
                 window_times = window_times + ['all'] * pad
         else:
             window_times = [window_times]
@@ -139,7 +139,7 @@ class Simulation(dict):
 
 
 def _iterate_simulation_sources(sim, events, times):
-    """Iterate over all stimulation functions."""
+    """Iterate over all stimulation waveforms."""
     def correct_window_times(w_t, e_t):
         """Check if window time has the correct length."""
         if (isinstance(w_t, str) and w_t == 'all') or e_t is None:
@@ -150,13 +150,13 @@ def _iterate_simulation_sources(sim, events, times):
                      'length of parameter \'times\'')
             return w_t[:len(times)]
 
-    if len(sim.functions) == 1:
+    if len(sim.waveforms) == 1:
         yield (sim['n_dipoles'], sim['labels'],
                correct_window_times(sim.window_times[0]),
-               events[0], sim.functions[0])
+               events[0], sim.waveforms[0])
     else:
         dipoles = 1
-        for index, data_fun in enumerate(sim.functions):
+        for index, data_fun in enumerate(sim.waveforms):
             n_wt = min(index, len(sim.window_times) - 1)
             n_ev = min(index, len(events) - 1)
             labels = None
@@ -203,16 +203,16 @@ def get_events(sim, times, events):
         a list of events of type array, shape=(n_events, 3) | None
     """
     if isinstance(events, list):
-        if len(events) > sim.functions:
-            n_func = len(sim.functions)
+        if len(events) > sim.waveforms:
+            n_func = len(sim.waveforms)
             warn('The number of event arrays is greater than the number '
-                 'of functions. %s event arrays(s) will be generated.'
+                 'of waveforms. %s event arrays(s) will be generated.'
                  % n_func)
             events = events[:n_func]
-        elif len(events) < sim.functions:
-            pad = len(sim.functions) - len(events)
+        elif len(events) < sim.waveforms:
+            pad = len(sim.waveforms) - len(events)
             warn('The number of event arrays is smaller than the number '
-                 'of functions. Assuming that the last ones are None')
+                 'of waveforms. Assuming that the last ones are None')
             events = events + [None] * pad
     else:
         events = [events]

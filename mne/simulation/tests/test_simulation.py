@@ -16,16 +16,16 @@ from mne.datasets import testing
 
 
 def _same(times, fwd_f, n_dipoles, labels, location, subject, subjects_dir,
-          function, events):
+          waveform, events):
     sim_1 = Simulation(fwd_f, n_dipoles=n_dipoles, labels=labels,
                        location=location, subject=subject,
-                       subjects_dir=subjects_dir, function=function)
+                       subjects_dir=subjects_dir, waveform=waveform)
     raw_1 = simulate_raw_signal(sim_1, times, cov=None, events=events,
                                 verbose=0)
     data_1, _ = raw_1[:]
     sim_2 = Simulation(fwd_f, n_dipoles=n_dipoles, labels=labels,
                        location=location, subject=subject,
-                       subjects_dir=subjects_dir, function=function)
+                       subjects_dir=subjects_dir, waveform=waveform)
     raw_2 = simulate_raw_signal(sim_2, times, cov=None, events=events,
                                 verbose=0)
     data_2, _ = raw_2[:]
@@ -44,39 +44,39 @@ def _without_events(fwd_f, labels, subject, subjects_dir):
 
     # Should work
     _same(times, fwd_f, n_dipoles=2, labels=labels, location='center',
-          subject=subject, subjects_dir=subjects_dir, function='sin',
+          subject=subject, subjects_dir=subjects_dir, waveform='sin',
           events=None)
     _same(times, fwd_f, n_dipoles=2, labels=labels, location='center',
           subject=subject, subjects_dir=subjects_dir,
-          function=['p300_target', 'sin'], events=None)
+          waveform=['p300_target', 'sin'], events=None)
 
     # These should raise warnings
     warnings.simplefilter("error")
     # different labels and dipoles
     assert_raises(RuntimeWarning, Simulation, fwd_f, n_dipoles=1,
-                  labels=labels, function='sin')
+                  labels=labels, waveform='sin')
     assert_raises(RuntimeWarning, Simulation, fwd_f, n_dipoles=3,
-                  labels=labels, function='sin')
-    # different functions and dipoles
+                  labels=labels, waveform='sin')
+    # different waveforms and dipoles
     assert_raises(RuntimeWarning, Simulation, fwd_f, n_dipoles=2,
-                  labels=labels, function=['sin', 'p300_target', 'sin'])
+                  labels=labels, waveform=['sin', 'p300_target', 'sin'])
     assert_raises(RuntimeWarning, Simulation, fwd_f, n_dipoles=2,
-                  labels=labels, function=['sin'])
-    # different window times and functions
+                  labels=labels, waveform=['sin'])
+    # different window times and waveforms
     assert_raises(RuntimeWarning, Simulation, fwd_f, n_dipoles=2,
                   labels=labels, subjects_dir=subjects_dir,
-                  function=['sin', 'p300_target'],
+                  waveform=['sin', 'p300_target'],
                   window_times=['all', 'all', 'all'])
     assert_raises(RuntimeWarning, Simulation, fwd_f, n_dipoles=2,
                   labels=labels, subjects_dir=subjects_dir,
-                  function=['sin', 'p300_target'], window_times=['all'])
+                  waveform=['sin', 'p300_target'], window_times=['all'])
     warnings.simplefilter("always")
 
 
 def _with_events(fwd_f, labels, subject, subjects_dir):
 
     freq = 256.0
-    function = ['p300_target', 'sin']
+    waveform = ['p300_target', 'sin']
     time = 2.0
     times = np.arange(0, time, 1.0 / freq)
     window_times = np.arange(0, time / 3.0, 1.0 / freq)
@@ -88,10 +88,10 @@ def _with_events(fwd_f, labels, subject, subjects_dir):
     # These should work
     _same(times, fwd_f, n_dipoles=2, labels=labels, location='center',
           subject=subject, subjects_dir=subjects_dir,
-          function=function, events=[np.array(events)]*2)
+          waveform=waveform, events=[np.array(events)]*2)
     _same(times, fwd_f, n_dipoles=2, labels=labels, location='center',
           subject=subject, subjects_dir=subjects_dir,
-          function=function, events=events)
+          waveform=waveform, events=events)
 
     # These should raise warnings
     warnings.simplefilter("error")
@@ -99,7 +99,7 @@ def _with_events(fwd_f, labels, subject, subjects_dir):
     # wrong number of events
     sim = Simulation(fwd_f, n_dipoles=2, labels=labels, location='center',
                      subject=subject, subjects_dir=subjects_dir,
-                     function=function)
+                     waveform=waveform)
     assert_raises(RuntimeWarning, simulate_raw_signal, sim, times, cov=0,
                   events=[events], verbose=0)
     assert_raises(RuntimeWarning, simulate_raw_signal, sim, times, cov=0,
@@ -108,14 +108,14 @@ def _with_events(fwd_f, labels, subject, subjects_dir):
     window_times = np.arange(0, time + 1.0, 1.0 / freq)
     sim = Simulation(fwd_f, n_dipoles=2, labels=labels, location='center',
                      subject=subject, subjects_dir=subjects_dir,
-                     function=function, window_times=['all', window_times])
+                     waveform=waveform, window_times=['all', window_times])
     assert_raises(RuntimeWarning, simulate_raw_signal, sim, times, cov=0,
                   events=events, verbose=0)
     # add an index that is too large
     events[0, 0] = len(times)
     sim = Simulation(fwd_f, n_dipoles=2, labels=labels, location='center',
                      subject=subject, subjects_dir=subjects_dir,
-                     function=function)
+                     waveform=waveform)
     assert_raises(RuntimeWarning, simulate_raw_signal, sim, times, cov=0,
                   events=events, verbose=0)
 

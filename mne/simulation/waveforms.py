@@ -6,32 +6,32 @@ import numpy as np
 from ..utils import warn
 
 
-def get_function(function):
-    """Check function exists and return the callable.
+def get_waveform(waveform):
+    """Check waveform exists and return the callable.
 
     Returns a simple sinusoide if not found.
 
     Parameters
     ----------
-    function : str | callable
-        If str, mus be one of the known functions: 'sin', 'p300_target,
+    waveform : str | callable
+        If str, mus be one of the known waveforms: 'sin', 'p300_target,
         'p300_nontarget'.
     """
-    known_functions = {
-        'sin': function_sin,
-        'p300_target': function_p300_target,
-        'p300_nontarget': function_p300_nontarget,
+    known_waveforms = {
+        'sin': waveform_sin,
+        'p300_target': waveform_p300_target,
+        'p300_nontarget': waveform_p300_nontarget,
     }
-    if isinstance(function, str) and function in known_functions.keys():
-        return known_functions[function]
-    elif hasattr(function, "__call__"):
-        return function
+    if isinstance(waveform, str) and waveform in known_waveforms.keys():
+        return known_waveforms[waveform]
+    elif hasattr(waveform, "__call__"):
+        return waveform
     else:
-        warn('unknown function. Sinusoide will be generated')
-        return function_sin
+        warn('unknown waveform. Sinusoide will be generated')
+        return waveform_sin
 
 
-def function_sin(times, amplitude=1e-8):
+def waveform_sin(times, amplitude=1e-8):
     """Generate a sinusoide waveform.    .
 
     Returns a simple sinusoide
@@ -44,7 +44,7 @@ def function_sin(times, amplitude=1e-8):
     return amplitude * np.sin(20 * np.pi * times)
 
 
-def function_p300_target(times, peak=0.3, amplitude=15.0):
+def waveform_p300_target(times, peak=0.3, amplitude=15.0):
     """Generate a p300 target waveform.
 
     Create a p300 target waveform.
@@ -64,7 +64,7 @@ def function_p300_target(times, peak=0.3, amplitude=15.0):
             np.exp(-(times - peak + 0.04 + 0.2)**2 / 0.02))
 
 
-def function_p300_nontarget(times, peak=0.3, amplitude=15.0):
+def waveform_p300_nontarget(times, peak=0.3, amplitude=15.0):
     """Generate a p300 nontarget waveform.
 
     Create a p300 nontarget waveform.
