@@ -39,9 +39,8 @@ class Simulation(dict):
         To simulate a function (activity) on each dipole. If it is a string or
         a callable, the same activity will be generated over all dipoles
     window_times : array | list | str
-        time window(s) to generate activity
-        If list, its size should be len(function)
-        If str, should be ``all`` (default)
+        time window(s) to generate activity. If list, its size should be 
+        len(function). If str, should be ``all`` (default)
 
     Notes
     -----
@@ -141,9 +140,9 @@ class Simulation(dict):
 
 def _iterate_simulation_sources(sim, events, times):
     """Iterate over all stimulation functions."""
-    def correct_window_times(w_t):
+    def correct_window_times(w_t, e_t):
         """Check if window time has the correct length."""
-        if isinstance(w_t, str) and w_t == 'all':
+        if (isinstance(w_t, str) and w_t == 'all') or e_t is None:
             return times
         else:
             if len(w_t) > len(times):
@@ -164,7 +163,7 @@ def _iterate_simulation_sources(sim, events, times):
             if sim['labels'] is not None:
                 labels = [sim['labels'][index]]
             yield (dipoles, labels,
-                   correct_window_times(sim.window_times[n_wt]),
+                   correct_window_times(sim.window_times[n_wt], events[n_ev]),
                    events[n_ev], data_fun)
 
 

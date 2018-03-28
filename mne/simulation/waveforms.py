@@ -31,7 +31,7 @@ def get_function(function):
         return function_sin
 
 
-def function_sin(times):
+def function_sin(times, amplitude=1e-8):
     """Generate a sinusoide waveform.    .
 
     Returns a simple sinusoide
@@ -41,7 +41,7 @@ def function_sin(times):
     times : array
         Array of times
     """
-    return 1e-7 * np.sin(20 * np.pi * times)
+    return amplitude * np.sin(20 * np.pi * times)
 
 
 def function_p300_target(times, peak=0.3, amplitude=15.0):
