@@ -4,12 +4,12 @@
 
 import numpy as np
 
-from .source import simulate_sparse_stc
+from .source import simulate_sparse_stc, select_source_in_label
 from ..forward import apply_forward_raw
 from ..utils import warn, logger
 from ..io import RawArray
 from ..io.constants import FIFF
-
+from mne import find_events, pick_types
 from .waveforms import get_waveform
 from .noise import generate_noise_data
 
@@ -54,7 +54,7 @@ class Simulation(dict):
         labels, n_dipoles = self._get_sources(labels, n_dipoles)
         self.update(n_dipoles=n_dipoles, labels=labels, subject=subject,
                     subjects_dir=subjects_dir, location=location,
-                    info=self.fwd['info'])
+                    info=self.fwd['info'], coefficients=None)
         self['info']['projs'] = []
         self['info']['bads'] = []
         self['info']['sfreq'] = None
@@ -134,7 +134,112 @@ class Simulation(dict):
             window_times = [window_times]
 
         return [self._check_window_time(w_t) for w_t in window_times]
+    
+    
+    def set_sources(self, cf=None):
+        if cf is None:
+            cf = []
+            vertno = [[], []]
+            for i, label in enumerate(self['labels']):
+                lh_vertno, rh_vertno = select_source_in_label(
+                    self.fwd['src'], label, None, self['location'],
+                    self['subject'], self['subjects_dir'], 'sphere')
+                vertno[0] += lh_vertno
+                vertno[1] += rh_vertno
+                if len(lh_vertno) == 0 and len(rh_vertno) == 0:
+                    raise ValueError('No vertno found.')
+                cf.append((lh_vertno, rh_vertno))
+        self.update(coefficients=cf)
+        return self
 
+    def simulate_signal(self, times, events=None, variabilities=None, 
+                        verbose=None):
+        if len(times) <= 2:  # to ensure event encoding works
+            raise ValueError('stc must have at least three time points')
+    
+        info = self['info'].copy()
+        freq = np.floor(1. / (times[-1] - times[-2]))
+        _check_frequency(info, freq, 'The frequency of the time windows is not '
+                         'the same as the experiment time. ')
+        info['projs'] = []
+        info['lowpass'] = None
+    
+        # TODO: generate data for blinks and other physiological noise
+    
+        raw_data = np.zeros((len(info['ch_names']), len(times)))
+    
+        events = get_events(self, times, events)
+    
+        logger.info('Simulating signal from %s sources' % self['n_dipoles'])
+        
+        self.source_data=[]
+        
+        for dipoles, labels, window_time, event, variability, data_fun, cf in \
+                          _iterate_simulation_sources(self, events, 
+                                                      variabilities, times):
+    
+            source_data = simulate_sparse_stc(self.fwd['src'], dipoles,
+                                              window_time, data_fun, labels,
+                                              None, self['location'],
+                                              self['subject'], 
+                                              self['subjects_dir'], 'sphere',
+                                              cf)
+            
+            propagation = _get_propagation(event, times, window_time,
+                                           variability, freq)
+            self.source_data.append(source_data)
+            source_data.data = np.dot(source_data.data, propagation)
+            raw_data += apply_forward_raw(self.fwd, source_data, info,
+                                          verbose=verbose).get_data()
+    
+        # Add an empty stimulation channel
+        raw_data = np.vstack((raw_data, np.zeros((1, len(times)))))
+        stim_chan = dict(ch_name='STI 014', coil_type=FIFF.FIFFV_COIL_NONE,
+                         kind=FIFF.FIFFV_STIM_CH, logno=len(info["chs"]) + 1,
+                         scanno=len(info["chs"]) + 1, cal=1., range=1.,
+                         loc=np.full(12, np.nan), unit=FIFF.FIFF_UNIT_NONE,
+                         unit_mul=0., coord_frame=FIFF.FIFFV_COORD_UNKNOWN)
+        info['chs'].append(stim_chan)
+        info._update_redundant()
+    
+        # Create RawArray object with all data
+        raw = RawArray(raw_data, info, first_samp=times[0], verbose=verbose)
+    
+        # Update the stimulation channel with stimulations
+        stimulations = [event for event in events if event is not None]
+        if len(stimulations) != 0:
+            stimulations = np.unique(np.vstack(stimulations), axis=0)
+            # Add events onto a stimulation channel
+            raw.add_events(stimulations, stim_channel='STI 014')
+    
+        logger.info('Done')
+        
+        self.raw_signal = raw.copy()
+        return self
+    
+    def simulate_noisy_signal(self, cov='simple', random_state=None):
+        # Create RawArray object with all data
+        signal = self.raw_signal.copy().pick_types(eeg=True)
+        raw_data = signal.get_data()
+        events = find_events(self.raw_signal)
+        #TODO same stim channel name
+        
+        raw_data += generate_noise_data(signal.info, cov, 
+                                    len(signal.times), 
+                                    random_state)[0]
+        
+        # Add an empty stimulation channel
+        data = np.vstack((raw_data, np.zeros((1, len(signal.times)))))
+        idx = pick_types(self.raw_signal.info, meg=False, stim=True)
+        stim_chan = self.raw_signal.info['chs'][idx[0]]
+        
+        info = signal.info.copy()
+        info['chs'].append(stim_chan)
+        info._update_redundant()
+        
+        noisy_signal = RawArray(data, info, signal.first_samp, None)
+        noisy_signal.add_events(events,  stim_channel=stim_chan['ch_name'])
+        return noisy_signal.copy()
 
 def _check_frequency(info, freq, error_message):
     """Compare two frequency values and assert they are the same."""
@@ -157,23 +262,29 @@ def _correct_window_times(w_t, e_t, times):
         return w_t[:len(times)]
 
 
-def _iterate_simulation_sources(sim, events, times):
+def _iterate_simulation_sources(sim, events, variabilities, times):
     """Iterate over all stimulation waveforms."""
+    variabilities = [variabilities] if variabilities is None else variabilities
     if len(sim.waveforms) == 1:
         yield (sim['n_dipoles'], sim['labels'],
                _correct_window_times(sim.window_times[0], events[0], times),
-               events[0], sim.waveforms[0])
+               events[0], variabilities[0], sim.waveforms[0], 
+               sim['coefficients'])
     else:
         dipoles = 1
         for index, waveform in enumerate(sim.waveforms):
             n_wt = min(index, len(sim.window_times) - 1)
             n_ev = min(index, len(events) - 1)
+            n_var = min(index, len(variabilities) - 1)
             labels = None
             if sim['labels'] is not None:
                 labels = [sim['labels'][index]]
+            if sim['coefficients'] is not None:
+                cf = sim['coefficients'][index]
             yield (dipoles, labels,
                    _correct_window_times(sim.window_times[n_wt], events[n_ev],
-                                         times), events[n_ev], waveform)
+                                         times), events[n_ev], 
+                                         variabilities[n_var], waveform, cf)
 
 
 def _check_event(event, times):
@@ -229,7 +340,7 @@ def get_events(sim, times, events):
 
 
 def simulate_raw_signal(sim, times, cov=None, events=None, random_state=None,
-                        verbose=None):
+                        variabilities=None, verbose=None):
     """Simulate a raw signal.
 
     Parameters
@@ -246,6 +357,8 @@ def simulate_raw_signal(sim, times, cov=None, events=None, random_state=None,
         If None, defaults to no event (default)
     random_state : None | int | np.random.RandomState
         To specify the random generator state.
+    variabilities : None | list of dict
+        Will add latency variabilities to the events
     verbose : bool, str, int, or None
         If not None, override default verbose level (see :func:`mne.verbose`
         and :ref:`Logging documentation <tut_logging>` for more).
@@ -273,19 +386,20 @@ def simulate_raw_signal(sim, times, cov=None, events=None, random_state=None,
 
     logger.info('Simulating signal from %s sources' % sim['n_dipoles'])
 
-    for dipoles, labels, window_time, event, data_fun in \
-            _iterate_simulation_sources(sim, events, times):
+    for dipoles, labels, window_time, event, variability, data_fun, cf in \
+            _iterate_simulation_sources(sim, events, variabilities, times):
 
         source_data = simulate_sparse_stc(sim.fwd['src'], dipoles,
                                           window_time, data_fun, labels,
                                           None, sim['location'],
-                                          sim['subject'], sim['subjects_dir'])
-
-        propagation = _get_propagation(event, times, window_time)
+                                          sim['subject'], sim['subjects_dir'], 
+                                          'sphere', cf)
+        propagation = _get_propagation(event, times, window_time, variability, 
+                                       freq)
         source_data.data = np.dot(source_data.data, propagation)
         raw_data += apply_forward_raw(sim.fwd, source_data, info,
                                       verbose=verbose).get_data()
-
+    
     # Noise
     if cov is not None:
         raw_data += generate_noise_data(info, cov, len(times), random_state)[0]
@@ -314,15 +428,26 @@ def simulate_raw_signal(sim, times, cov=None, events=None, random_state=None,
     return raw
 
 
-def _get_propagation(event, times, window_time):
+def _get_propagation(event, times, window_time, variability=None, sfreq=None):
     """Return the matrix that propagates the waveforms."""
     propagation = 1.0
-
     if event is not None:
-
         # generate stimulation timeline
         stimulation_timeline = np.zeros(len(times))
-        stimulation_indices = np.array(event[:, 0], dtype=int)
+        
+        #account for latency variability
+        if variability is not None:
+            stimulation_indices = np.zeros_like(event[:, 0], dtype=int)
+            for i in range(len(event)): 
+                if variability['latency']==0:
+                    latency = 0
+                else:
+                    lim = int(variability['latency']*sfreq)
+                    latency = np.random.randint(-lim, lim)
+                stimulation_indices[i] = int(event[i, 0])+latency
+                                         
+        else:
+            stimulation_indices = np.array(event[:, 0], dtype=int)
         stimulation_timeline[stimulation_indices] = event[:, 2]
 
         from scipy.linalg import toeplitz
@@ -332,5 +457,18 @@ def _get_propagation(event, times, window_time):
         trig = np.zeros((len(times)))
         trig[index] = 1
         propagation = toeplitz(trig[0:len(window_time)], trig)
+        
+        #account for amplitude variability
+        if variability is not None:
+            peak = variability['peak']
+            amplitudes = np.zeros((len(window_time), len(event)))
+            for i in range(len(event)):
+                amplitude = (variability['amplitude'] * np.random.randn())
+                amplitude = np.ones_like(window_time) + (amplitude * \
+                            np.exp(-(window_time - peak)**2 / 0.02))
+                amplitudes[:,i]=amplitude
+            for i in range(len(amplitudes)):
+                to_mult = np.argwhere(propagation[i]==1)[:,0]
+                propagation[i,to_mult] = amplitudes[i,:len(to_mult)]
 
     return propagation

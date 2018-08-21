@@ -90,7 +90,8 @@ def select_source_in_label(src, label, random_state=None, location='random',
 def simulate_sparse_stc(src, n_dipoles, times,
                         data_fun=lambda t: 1e-7 * np.sin(20 * np.pi * t),
                         labels=None, random_state=None, location='random',
-                        subject=None, subjects_dir=None, surf='sphere'):
+                        subject=None, subjects_dir=None, surf='sphere', 
+                        coefficients = None):
     """Generate sparse (n_dipoles) sources time courses from data_fun.
 
     This function randomly selects ``n_dipoles`` vertices in the whole
@@ -142,6 +143,9 @@ def simulate_sparse_stc(src, n_dipoles, times,
         with cortical folding.
 
         .. versionadded:: 0.13
+        
+    coefficients : tupple
+        coefficients of the dipoles in the left and right hemisphere
 
     Returns
     -------
@@ -170,7 +174,7 @@ def simulate_sparse_stc(src, n_dipoles, times,
     for i_dip in range(n_dipoles):
         data[i_dip, :] = data_fun(times)
 
-    if labels is None:
+    if labels is None and coefficients is None:
         # can be vol or surface source space
         offsets = np.linspace(0, n_dipoles, len(src) + 1).astype(int)
         n_dipoles_ss = np.diff(offsets)
@@ -179,26 +183,36 @@ def simulate_sparse_stc(src, n_dipoles, times,
               for n, s in zip(n_dipoles_ss, src)]
         datas = data
     else:
-        if n_dipoles != len(labels):
-            warn('The number of labels is different from the number of '
-                 'dipoles. %s dipole(s) will be generated.'
-                 % min(n_dipoles, len(labels)))
-        labels = labels[:n_dipoles] if n_dipoles < len(labels) else labels
-
-        vertno = [[], []]
-        lh_data = [np.empty((0, data.shape[1]))]
-        rh_data = [np.empty((0, data.shape[1]))]
-        for i, label in enumerate(labels):
-            lh_vertno, rh_vertno = select_source_in_label(
-                src, label, rng, location, subject, subjects_dir, surf)
-            vertno[0] += lh_vertno
-            vertno[1] += rh_vertno
-            if len(lh_vertno) != 0:
+        if coefficients is not None: 
+            v_lh, v_rh = coefficients
+            vertno = [v_lh, v_rh]
+            lh_data = [np.empty((0, data.shape[1]))]
+            for i in range(len(v_lh)):
                 lh_data.append(data[i][np.newaxis])
-            elif len(rh_vertno) != 0:
+            rh_data = [np.empty((0, data.shape[1]))]
+            for i in range(len(v_rh)):
                 rh_data.append(data[i][np.newaxis])
-            else:
-                raise ValueError('No vertno found.')
+        else:
+            if n_dipoles != len(labels):
+                warn('The number of labels is different from the number of '
+                     'dipoles. %s dipole(s) will be generated.'
+                     % min(n_dipoles, len(labels)))
+            labels = labels[:n_dipoles] if n_dipoles < len(labels) else labels
+
+            vertno = [[], []]
+            lh_data = [np.empty((0, data.shape[1]))]
+            rh_data = [np.empty((0, data.shape[1]))]
+            for i, label in enumerate(labels):
+                lh_vertno, rh_vertno = select_source_in_label(
+                    src, label, rng, location, subject, subjects_dir, surf)
+                vertno[0] += lh_vertno
+                vertno[1] += rh_vertno
+                if len(lh_vertno) != 0:
+                    lh_data.append(data[i][np.newaxis])
+                elif len(rh_vertno) != 0:
+                    rh_data.append(data[i][np.newaxis])
+                else:
+                    raise ValueError('No vertno found.')
         vs = [np.array(v) for v in vertno]
         datas = [np.concatenate(d) for d in [lh_data, rh_data]]
         # need to sort each hemi by vertex number
